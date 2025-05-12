@@ -1,24 +1,26 @@
-# Файл: app/ui_manager.py
-
 import tkinter as tk
 from tkinter import ttk
+import tkinter.scrolledtext as scrolledtext  # Для текстової області з прокруткою
 
 
 class UIManager:
     def __init__(self, master, app_ref):
-        self.master = master  # Головне вікно Tk
-        self.app = app_ref  # Посилання на головний клас PDFViewerApp
+        self.master = master
+        self.app = app_ref
 
-        # Кольори для підсвітки пошуку (перенесено з PDFViewerApp)
         self.highlight_color_search_current_stroke = (0, 0, 255)
         self.highlight_color_search_current_fill = (173, 216, 230, 100)
         self.highlight_color_search_other_stroke = (100, 149, 237)
         self.highlight_color_search_other_fill = (173, 216, 230, 70)
         self.highlight_stroke_width = 1
 
-        # Кольори для виділення тексту
         self.selection_color_fill_hex = "#add8e6"
         self.selection_outline_color = "blue"
+
+        # Атрибути для віджетів терміналу
+        self.terminal_output_text = None
+        self.terminal_input_entry = None
+        self.current_dir_label = None
 
         self._create_widgets()
 
@@ -57,7 +59,6 @@ class UIManager:
         # --- Секція Закладки (Теми/Питання) ---
         ttk.Label(self.left_controls_panel, text="Закладки (Теми/Питання)", font=("Arial", 10, "bold")).pack(
             pady=(5, 2), anchor=tk.W)
-        # ВИПРАВЛЕННЯ: postcommand викликає метод UIManager
         self.bookmark_combo = ttk.Combobox(self.left_controls_panel, state="readonly",
                                            postcommand=self._update_bookmark_combo_values_from_manager)
         self.bookmark_combo.pack(fill=tk.X, pady=2)
@@ -117,10 +118,16 @@ class UIManager:
         self.zoom_label = ttk.Label(self.left_controls_panel, text=f"Масштаб: {int(self.app.current_zoom * 100)}%")
         self.zoom_label.pack(pady=2)
 
-        # --- Права панель для PDF ---
-        self.right_pdf_panel = ttk.Frame(main_frame)
-        self.right_pdf_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
-        self.canvas_frame = ttk.Frame(self.right_pdf_panel)
+        # --- Права панель для PDF та Терміналу ---
+        self.right_panel = ttk.Frame(main_frame)
+        self.right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+
+        # --- Верхня частина правої панелі: PDF ---
+        self.pdf_display_frame = ttk.Frame(self.right_panel)
+        # PDF займає більшість місця, але не все, щоб термінал був видимий
+        self.pdf_display_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(0, 5))
+
+        self.canvas_frame = ttk.Frame(self.pdf_display_frame)
         self.canvas_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self.canvas = tk.Canvas(self.canvas_frame, bg="lightgrey", cursor="arrow")
@@ -128,21 +135,52 @@ class UIManager:
 
         self.v_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
         self.v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.h_scrollbar = ttk.Scrollbar(self.right_pdf_panel, orient=tk.HORIZONTAL, command=self.canvas.xview)
-        self.h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.canvas.configure(yscrollcommand=self.v_scrollbar.set, xscrollcommand=self.h_scrollbar.set)
+        self.h_scrollbar_canvas = ttk.Scrollbar(self.pdf_display_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
+        self.h_scrollbar_canvas.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.canvas.configure(yscrollcommand=self.v_scrollbar.set, xscrollcommand=self.h_scrollbar_canvas.set)
+
+        # --- Нижня частина правої панелі: Термінал ---
+        # Labelframe для візуального відокремлення
+        self.terminal_frame = ttk.Labelframe(self.right_panel, text="Термінал", height=150)
+        # expand=False, щоб не розтягувався при зміні розміру вікна (якщо resizable=True)
+        self.terminal_frame.pack(side=tk.BOTTOM, fill=tk.X, expand=False, pady=(5, 0), padx=2)
+        # Забороняємо фрейму змінювати розмір через вміст, щоб height=150 працювало
+        self.terminal_frame.pack_propagate(False)
+
+        self.terminal_output_text = scrolledtext.ScrolledText(
+            self.terminal_frame,
+            wrap=tk.WORD,
+            state=tk.DISABLED,
+            height=7,
+            font=("Courier New", 9),
+            bg="black",  # Типовий колір фону терміналу
+            fg="lightgreen"  # Типовий колір тексту терміналу
+        )
+        self.terminal_output_text.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        # Налаштування тегів для кольорового виводу
+        self.terminal_output_text.tag_config("command", foreground="yellow")
+        self.terminal_output_text.tag_config("output", foreground="lightgreen")  # За замовчуванням
+        self.terminal_output_text.tag_config("error", foreground="red")
+        self.terminal_output_text.tag_config("info", foreground="lightblue")
+
+        terminal_input_frame = ttk.Frame(self.terminal_frame)
+        terminal_input_frame.pack(fill=tk.X, padx=2, pady=(0, 2))
+
+        self.current_dir_label = ttk.Label(terminal_input_frame, text="CWD: >", font=("Courier New", 9))
+        self.current_dir_label.pack(side=tk.LEFT, padx=(0, 3))
+
+        self.terminal_input_entry = ttk.Entry(terminal_input_frame, font=("Courier New", 9))
+        self.terminal_input_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.terminal_input_entry.bind("<Return>", self.app.execute_terminal_command_command)
 
     def _update_bookmark_combo_values_from_manager(self):
-        """Отримує актуальні закладки від BookmarkManager і оновлює Combobox."""
-        # Переконуємося, що bookmark_manager існує, перш ніж звертатися до нього
         if hasattr(self.app, 'bookmark_manager') and self.app.bookmark_manager is not None:
             bookmarks_dict = self.app.bookmark_manager.bookmarks
             self.update_bookmark_combo_list(bookmarks_dict)
         else:
-            # Якщо bookmark_manager ще не створено, можна просто очистити комбобокс
-            # або нічого не робити, якщо це викликається до повної ініціалізації.
-            self.update_bookmark_combo_list({})  # Передати порожній словник
+            self.update_bookmark_combo_list({})
 
     def update_navigation_buttons_state(self):
         pdf_doc_exists = self.app.pdf_handler.pdf_document is not None
@@ -172,7 +210,6 @@ class UIManager:
 
     def update_bookmark_buttons_state(self):
         pdf_doc_exists = self.app.pdf_handler.pdf_document is not None
-        # Перевіряємо, чи bookmark_manager вже створено
         bookmarks_exist = hasattr(self.app,
                                   'bookmark_manager') and self.app.bookmark_manager and self.app.bookmark_manager.bookmarks
 
@@ -212,3 +249,21 @@ class UIManager:
 
         pdf_doc_exists = self.app.pdf_handler.pdf_document is not None
         self.btn_copy_page_text.config(state=tk.NORMAL if pdf_doc_exists else tk.DISABLED)
+
+    def append_to_terminal(self, text, tag=None):
+        if self.terminal_output_text:
+            self.terminal_output_text.config(state=tk.NORMAL)
+            if tag:
+                self.terminal_output_text.insert(tk.END, text, tag)
+            else:
+                self.terminal_output_text.insert(tk.END, text, "output")  # Тег за замовчуванням
+            self.terminal_output_text.see(tk.END)
+            self.terminal_output_text.config(state=tk.DISABLED)
+
+    def update_terminal_cwd_label(self, cwd_path):
+        if self.current_dir_label:
+            max_len = 35  # Трохи збільшив
+            display_path = cwd_path
+            if len(cwd_path) > max_len:
+                display_path = "..." + cwd_path[-(max_len - 3):]
+            self.current_dir_label.config(text=f"{display_path}> ")

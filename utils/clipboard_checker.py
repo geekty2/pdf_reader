@@ -7,8 +7,6 @@ def check_pyperclip_configured():
     try:
         pyperclip.copy("test_clipboard_check_startup")
         if pyperclip.paste() != "test_clipboard_check_startup":
-            # Іноді paste() може повернути попередній вміст, якщо copy() не спрацював миттєво
-            # або якщо інший процес змінив буфер. Дамо другий шанс.
             pyperclip.copy("test_clipboard_check_startup_2")
             if pyperclip.paste() != "test_clipboard_check_startup_2":
                 raise pyperclip.PyperclipException("Перевірка буфера обміну не вдалася: вміст не збігається.")

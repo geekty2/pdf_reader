@@ -1,35 +1,41 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageDraw
-import fitz  # PyMuPDF
+import fitz
 import pyperclip
-import os  # Для os.path.basename
+import os
+import platform
+import pytesseract
+import subprocess  # Для запуску команд
+import threading  # Щоб не блокувати GUI
+import queue  # Для передачі виводу з потоку в GUI
+import shlex  # Для безпечного розбиття команди на аргументи
 
-# Імпортуємо наші нові модулі
 from .pdf_handler import PDFHandler
 from .ui_manager import UIManager
 from .bookmark_manager import BookmarkManager
 from .search_manager import SearchManager
 
 
-# from .event_handlers import EventHandlers # Якщо будемо використовувати
-
 class PDFViewerApp:
     def __init__(self, master):
         self.master = master
-        master.title("Розширений PDF Рідер (Модульний)")
+        master.title("Розширений PDF Рідер (Модульний + Термінал)")
 
-        # ... (ініціалізація атрибутів стану) ...
-        self.window_width = 1100
-        self.window_height = 750
+        self.window_width = 1000
+        self.window_height = 600  # Залишаємо, хоча геометрія встановлюється в UIManager
+
         self.tk_image = None
+        self.current_pil_image_for_ocr_selection = None
         self.current_page_num = 0
+
         self.current_zoom = 1.0
         self.default_zoom_for_file = 1.0
         self.zoom_step = 0.1
         self.min_zoom = 0.1
         self.max_zoom = 5.0
         self.epsilon = 0.001
+
         self.is_panning_right_btn = False
         self.pan_start_x_right_btn = 0
         self.pan_start_y_right_btn = 0
@@ -38,37 +44,34 @@ class PDFViewerApp:
         self.selection_rect_start_y = 0
         self.selection_rect_id = None
 
-        # Ініціалізація менеджерів - ЗМІНЕНО ПОРЯДОК
+        # Для терміналу
+        self.current_working_directory = os.getcwd()
+        self.command_queue = queue.Queue()
+
+        # Ініціалізація менеджерів
         self.pdf_handler = PDFHandler()
-        self.bookmark_manager = BookmarkManager(self)  # Створюємо ДО UIManager
-        self.search_manager = SearchManager(self)  # Створюємо ДО UIManager
+        self.bookmark_manager = BookmarkManager(self)
+        self.search_manager = SearchManager(self)
+        self.ui_manager = UIManager(master, self)  # UIManager створюється останнім
 
-        # Тепер створюємо UIManager, коли інші менеджери вже існують
-        self.ui_manager = UIManager(master, self)
-        # self.event_handler = EventHandlers(self) # Якщо будемо використовувати
-
-        # Встановлюємо геометрію та resizable після створення UIManager
-        master.geometry(f"{self.window_width}x{self.window_height}")
+        master.geometry(f"{self.window_width}x{self.window_height + 150}")  # +150 для терміналу
         master.resizable(False, False)
 
-        # image_on_canvas тепер створюється в UIManager, але нам потрібне посилання
         self.image_on_canvas = self.ui_manager.canvas.create_image(0, 0, anchor=tk.NW)
 
         self._setup_event_bindings()
         self.master.protocol("WM_DELETE_WINDOW", self.on_closing_command)
+
+        self._update_terminal_cwd_ui()  # Ініціалізація мітки CWD
+        self._check_command_queue()  # Запуск перевірки черги
         self.ui_manager.update_all_button_states()  # Початковий стан кнопок
 
     def _setup_event_bindings(self):
-        """Налаштування прив'язок подій до віджетів (зокрема Canvas)."""
-        canvas = self.ui_manager.canvas  # Отримуємо canvas від UIManager
-
+        canvas = self.ui_manager.canvas
         canvas.bind("<ButtonPress-3>", self.start_pan_right_btn_command)
         canvas.bind("<B3-Motion>", self.do_pan_right_btn_command)
         canvas.bind("<ButtonRelease-3>", self.end_pan_right_btn_command)
 
-        # Використовуємо platform для обробки колеса миші
-        # (Можна винести в EventHandlers)
-        import platform
         if platform.system() == "Linux":
             canvas.bind("<Button-4>", self.on_mouse_wheel_command)
             canvas.bind("<Button-5>", self.on_mouse_wheel_command)
@@ -77,37 +80,189 @@ class PDFViewerApp:
 
         canvas.bind("<ButtonPress-1>", self.start_text_selection_command)
         canvas.bind("<B1-Motion>", self.do_text_selection_command)
-        canvas.bind("<ButtonRelease-1>", self.end_text_selection_and_copy_command)
+        canvas.bind("<ButtonRelease-1>", self.end_text_selection_and_ocr_command)
 
-    # --- Команди, що викликаються з UI (методи-обгортки) ---
+    def _update_terminal_cwd_ui(self):
+        if hasattr(self, 'ui_manager') and self.ui_manager:
+            self.ui_manager.update_terminal_cwd_label(self.current_working_directory)
+
+    def execute_terminal_command_command(self, event=None):
+        command = self.ui_manager.terminal_input_entry.get()
+        if not command.strip():
+            return
+
+        self.ui_manager.append_to_terminal(f"{self.current_working_directory}> {command}\n", "command")
+        self.ui_manager.terminal_input_entry.delete(0, tk.END)
+
+        if command.strip().lower().startswith("cd "):
+            try:
+                new_dir_part = command.strip()[3:].strip()
+                if not new_dir_part:  # Просто "cd"
+                    # Для Windows 'cd' без аргументів показує поточну директорію.
+                    # Для Linux/macOS 'cd' без аргументів переходить в домашню директорію.
+                    if platform.system() == "Windows":
+                        self.ui_manager.append_to_terminal(f"{self.current_working_directory}\n", "output")
+                        return  # Не змінюємо директорію, лише показуємо
+                    else:
+                        new_dir_part = os.path.expanduser("~")  # Домашня директорія
+
+                if not os.path.isabs(new_dir_part):
+                    new_dir = os.path.abspath(os.path.join(self.current_working_directory, new_dir_part))
+                else:
+                    new_dir = new_dir_part
+
+                # Важливо: os.chdir змінює CWD для Python процесу, але не для майбутніх subprocess
+                # якщо cwd не передається явно. Але ми передаємо cwd.
+                os.chdir(new_dir)
+                self.current_working_directory = os.getcwd()
+                self.ui_manager.append_to_terminal(f"Нова директорія: {self.current_working_directory}\n", "info")
+                self._update_terminal_cwd_ui()
+            except FileNotFoundError:
+                self.ui_manager.append_to_terminal(f"Помилка: Директорію не знайдено: {new_dir_part}\n", "error")
+            except Exception as e:
+                self.ui_manager.append_to_terminal(f"Помилка cd: {e}\n", "error")
+        elif command.strip().lower() == "exit":
+            self.ui_manager.append_to_terminal("Завершення роботи імітації терміналу...\n", "info")
+            # Тут можна було б закрити вкладку терміналу, якби вона була окремою.
+            # Або просто очистити поле вводу.
+        else:
+            thread = threading.Thread(target=self._run_command_in_thread, args=(command,))
+            thread.daemon = True
+            thread.start()
+
+    def _run_command_in_thread(self, command_str):
+        try:
+            if platform.system() == "Windows":
+                # Використовуємо cmd /c, але передаємо команду як єдиний рядок для простоти
+                # Це менш безпечно, ніж розбиття, але багато команд Windows цього вимагають
+                # Для більшої безпеки, потрібно аналізувати команду і розбивати її
+                # або використовувати більш складні конструкції.
+                process = subprocess.Popen(f'cmd /c "{command_str}"',  # Команда в лапках
+                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                           text=False,  # Читаємо байти для правильного декодування
+                                           cwd=self.current_working_directory,
+                                           creationflags=subprocess.CREATE_NO_WINDOW,
+                                           shell=False)  # Shell=False безпечніше
+
+                # Визначаємо кодування консолі Windows (може бути cp866 або інше)
+                # cp1251 часто використовується для українських Windows
+                # utf-8 може бути, якщо консоль налаштована
+                console_encoding = 'cp1251'  # Або 'cp866', 'utf-8'
+                try:
+                    import locale
+                    console_encoding = locale.getpreferredencoding(False)
+                except:
+                    pass  # Залишаємо cp1251 за замовчуванням
+
+                for line_bytes in iter(process.stdout.readline, b''):
+                    try:
+                        line = line_bytes.decode(console_encoding, errors='replace')
+                        self.command_queue.put(line)
+                    except Exception as dec_err:
+                        self.command_queue.put(f"[Decoding Error: {dec_err}] {line_bytes[:50]}...\n")
+
+
+            else:  # Linux/macOS
+                args = shlex.split(command_str)
+                process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                           text=True, cwd=self.current_working_directory,
+                                           encoding='utf-8', errors='replace')
+                for line in iter(process.stdout.readline, ''):
+                    self.command_queue.put(line)
+
+            process.stdout.close()
+            return_code = process.wait()
+            if return_code != 0:
+                self.command_queue.put(f"\nПроцес завершився з кодом: {return_code}\n")
+        except FileNotFoundError:
+            self.command_queue.put(f"Помилка: Команду або програму не знайдено: '{command_str.split()[0]}'\n")
+        except Exception as e:
+            self.command_queue.put(f"Помилка виконання команди '{command_str}': {e}\n")
+
+    def _check_command_queue(self):
+        try:
+            while True:
+                line = self.command_queue.get_nowait()
+                tag = "output"
+                line_lower = line.lower()
+                if "помилка" in line_lower or "error" in line_lower or "не знайдено" in line_lower or "failed" in line_lower:
+                    tag = "error"
+                elif " попередження" in line_lower or "warning" in line_lower:
+                    tag = "info"  # Можна зробити окремий тег для warning
+                self.ui_manager.append_to_terminal(line, tag)
+        except queue.Empty:
+            pass
+        finally:
+            self.master.after(100, self._check_command_queue)
+
     def open_pdf_command(self):
         filepath = filedialog.askopenfilename(
             title="Виберіть PDF файл", filetypes=(("PDF файли", "*.pdf"), ("Всі файли", "*.*"))
         )
         if not filepath: return
 
-        # Спочатку очищаємо стан попереднього документа
         self.clear_all_state_before_open()
 
         if self.pdf_handler.open_pdf_file(filepath):
-            # Перевірка текстового шару
-            has_text, msg = self.pdf_handler.check_text_layer(0)
-            if not has_text:
+            has_text, msg = self.pdf_handler.check_text_layer(0, ocr_fallback=True, ocr_lang='ukr+eng')
+            # Тепер завжди пробуємо OCR, якщо немає тексту, і показуємо результат
+            if "ПОМИЛКА: Tesseract не знайдено" in msg:
+                messagebox.showerror("Помилка Tesseract", msg, parent=self.master)
+            elif "Помилка OCR" in msg:
+                messagebox.showwarning("Інформація про OCR", msg, parent=self.master)
+            elif not has_text:
                 messagebox.showwarning("Інформація про PDF", msg, parent=self.master)
 
             self.current_page_num = 0
             self.master.title(f"PDF Рідер - {os.path.basename(filepath)}")
-            self.fit_page_to_canvas_and_set_default()  # Розрахунок масштабу
-            self.display_page()  # Відображення першої сторінки
+            self.fit_page_to_canvas_and_set_default()
+            self.display_page()
         else:
             messagebox.showerror("Помилка", f"Не вдалося відкрити PDF файл: {filepath}", parent=self.master)
 
         self.ui_manager.update_all_button_states()
 
-    def copy_current_page_text_command(self):
+    # ... (решта методів: copy_current_page_text_command, навігація, пошук, масштабування,
+    # fit_page_to_canvas_and_set_default, display_page, обробники панорамування та колеса,
+    # виділення тексту, clear_all_state_before_open, on_closing_command -
+    # залишаються такими ж, як у попередній повній версії `pdf_viewer_app.py`,
+    # яку я надавав з виправленням `AttributeError`)
+    # Для скорочення відповіді, я їх тут не дублюю.
+    # Будь ласка, переконайтеся, що вони є у вашому файлі з попередніх версій.
+    # Я додав сюди тільки ті, що стосуються терміналу або були змінені для взаємодії з ним.
+    # Скопіюйте ті методи, що відсутні, з попередньої повної версії pdf_viewer_app.py.
+
+    def clear_all_state_before_open(self):
+        self.pdf_handler.close_pdf()
+        self.current_page_num = 0
+        self.current_zoom = 1.0
+        self.default_zoom_for_file = 1.0
+        self.current_pil_image_for_ocr_selection = None
+
+        self.bookmark_manager.clear_bookmarks()
+        self.search_manager.clear_search_results(update_ui=False)
+
+        canvas = self.ui_manager.canvas
+        if hasattr(self, 'tk_image') and self.tk_image:
+            canvas.itemconfig(self.image_on_canvas, image="")
+            self.tk_image = None
+        canvas.coords(self.image_on_canvas, 0, 0)
+        canvas.config(scrollregion=(0, 0, 0, 0))
+
+    def on_closing_command(self):
+        self.pdf_handler.close_pdf()
+        self.master.destroy()
+
+    # Методи, які були пропущені для скорочення, але мають бути тут:
+    # (скопіюйте їх з попередньої повної версії pdf_viewer_app.py)
+    def copy_current_page_text_command(self):  # Вище вже є
         if not self.pdf_handler.pdf_document: return
         try:
-            text = self.pdf_handler.get_page_text(self.current_page_num)
+            text = self.pdf_handler.get_page_text(self.current_page_num, use_ocr_if_needed=True, ocr_lang='ukr+eng')
+            if "ПОМИЛКА_OCR" in text:
+                messagebox.showerror("Помилка OCR", f"Не вдалося розпізнати текст: {text.replace('ПОМИЛКА_OCR_', '')}",
+                                     parent=self.master)
+                return
             pyperclip.copy(text)
             messagebox.showinfo("Копіювання", "Текст поточної сторінки скопійовано.", parent=self.master)
         except pyperclip.PyperclipException as e:
@@ -127,7 +282,7 @@ class PDFViewerApp:
             self.display_page()
             self.ui_manager.update_navigation_buttons_state()
 
-    def perform_search_command(self, event=None):  # event для прив'язки Enter
+    def perform_search_command(self, event=None):
         search_term = self.ui_manager.search_entry.get()
         self.search_manager.perform_search(search_term)
 
@@ -154,12 +309,11 @@ class PDFViewerApp:
             self.display_page()
             self.ui_manager.update_zoom_buttons_state()
 
-    # --- Логіка відображення та розрахунків ---
     def fit_page_to_canvas_and_set_default(self):
         if not self.pdf_handler.pdf_document or self.pdf_handler.total_pages == 0:
             calculated_zoom = 1.0
         else:
-            page_to_fit = self.pdf_handler.get_page(0)  # Використовуємо pdf_handler
+            page_to_fit = self.pdf_handler.get_page(0)
             if not page_to_fit:
                 calculated_zoom = 1.0
             else:
@@ -173,7 +327,7 @@ class PDFViewerApp:
                     canvas_width = canvas.winfo_width()
                     canvas_height = canvas.winfo_height()
 
-                    if canvas_width <= 1 or canvas_height <= 1:  # Запасний варіант
+                    if canvas_width <= 1 or canvas_height <= 1:
                         self.ui_manager.right_pdf_panel.update_idletasks()
                         parent_width = self.ui_manager.right_pdf_panel.winfo_width()
                         parent_height = self.ui_manager.right_pdf_panel.winfo_height()
@@ -189,7 +343,6 @@ class PDFViewerApp:
 
         self.current_zoom = max(self.min_zoom, min(calculated_zoom, self.max_zoom))
         self.default_zoom_for_file = self.current_zoom
-        # Оновлення мітки масштабу тепер робить UIManager
         if hasattr(self, 'ui_manager') and self.ui_manager:
             self.ui_manager.update_zoom_buttons_state()
 
@@ -198,21 +351,26 @@ class PDFViewerApp:
         if not self.pdf_handler.pdf_document or self.pdf_handler.total_pages == 0:
             canvas.itemconfig(self.image_on_canvas, image="")
             self.tk_image = None
+            self.current_pil_image_for_ocr_selection = None
             canvas.coords(self.image_on_canvas, 0, 0)
             canvas.config(scrollregion=(0, 0, 0, 0))
-            self.ui_manager.update_navigation_buttons_state()  # Оновити інфо про сторінку
+            self.ui_manager.update_navigation_buttons_state()
             return
         try:
             zoom_matrix = fitz.Matrix(self.current_zoom, self.current_zoom)
             pix = self.pdf_handler.get_page_pixmap(self.current_page_num, zoom_matrix)
 
             if not pix:
+                self.current_pil_image_for_ocr_selection = None
                 raise ValueError("Не вдалося отримати Pixmap для сторінки.")
 
-            pil_image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples).convert("RGBA")
-            draw = ImageDraw.Draw(pil_image)
+            self.current_pil_image_for_ocr_selection = Image.frombytes(
+                "RGB", [pix.width, pix.height], pix.samples
+            ).convert("RGBA")
 
-            # Підсвітка результатів пошуку
+            pil_image_for_display = self.current_pil_image_for_ocr_selection.copy()
+            draw = ImageDraw.Draw(pil_image_for_display)
+
             search_map = self.search_manager.search_results_map
             if self.current_page_num in search_map:
                 rects_on_this_page = search_map[self.current_page_num]
@@ -241,7 +399,7 @@ class PDFViewerApp:
                                    outline=o_color, fill=f_color,
                                    width=self.ui_manager.highlight_stroke_width)
 
-            self.tk_image = ImageTk.PhotoImage(pil_image.convert("RGB"))
+            self.tk_image = ImageTk.PhotoImage(pil_image_for_display.convert("RGB"))
 
             img_width, img_height = self.tk_image.width(), self.tk_image.height()
             self.master.update_idletasks()
@@ -254,19 +412,17 @@ class PDFViewerApp:
             bbox = canvas.bbox(self.image_on_canvas)
             canvas.config(scrollregion=bbox if bbox else (0, 0, 0, 0))
 
-            # Оновлення міток через UIManager
             self.ui_manager.update_navigation_buttons_state()
             self.ui_manager.update_zoom_buttons_state()
 
         except Exception as e:
+            self.current_pil_image_for_ocr_selection = None
             messagebox.showerror("Помилка відображення", f"Не вдалося відобразити сторінку: {e}", parent=self.master)
-            # Скидання Canvas
             canvas.itemconfig(self.image_on_canvas, image="")
             self.tk_image = None
             canvas.coords(self.image_on_canvas, 0, 0)
             canvas.config(scrollregion=(0, 0, 0, 0))
 
-    # --- Обробники подій миші (передають керування або виконують дію) ---
     def start_pan_right_btn_command(self, event):
         canvas = self.ui_manager.canvas
         if not self.pdf_handler.pdf_document: return
@@ -290,13 +446,12 @@ class PDFViewerApp:
         if not self.pdf_handler.pdf_document: return
         if self.is_selecting_text: return
 
-        # Для Linux delta немає, є event.num
         delta = 0
         if platform.system() == "Linux":
             if event.num == 4:
-                delta = 120  # Умовна прокрутка вгору
+                delta = 120
             elif event.num == 5:
-                delta = -120  # Умовна прокрутка вниз
+                delta = -120
         else:
             delta = event.delta
 
@@ -307,7 +462,7 @@ class PDFViewerApp:
 
     def start_text_selection_command(self, event):
         canvas = self.ui_manager.canvas
-        if not self.pdf_handler.pdf_document: return
+        if not self.pdf_handler.pdf_document or not self.current_pil_image_for_ocr_selection: return
         self.is_selecting_text = True
         self.selection_rect_start_x = canvas.canvasx(event.x)
         self.selection_rect_start_y = canvas.canvasy(event.y)
@@ -334,9 +489,10 @@ class PDFViewerApp:
                           self.selection_rect_start_x, self.selection_rect_start_y,
                           current_x, current_y)
 
-    def end_text_selection_and_copy_command(self, event):
+    def end_text_selection_and_ocr_command(self, event):
         canvas = self.ui_manager.canvas
-        if not self.pdf_handler.pdf_document or not self.is_selecting_text:
+        if not self.pdf_handler.pdf_document or not self.is_selecting_text or \
+                not self.current_pil_image_for_ocr_selection:
             if self.selection_rect_id:
                 canvas.delete(self.selection_rect_id)
                 self.selection_rect_id = None
@@ -344,71 +500,64 @@ class PDFViewerApp:
             return
 
         self.is_selecting_text = False
-        final_x = canvas.canvasx(event.x)
-        final_y = canvas.canvasy(event.y)
+        final_x_canvas = canvas.canvasx(event.x)
+        final_y_canvas = canvas.canvasy(event.y)
 
         if self.selection_rect_id:
-            x0_canvas = min(self.selection_rect_start_x, final_x)
-            y0_canvas = min(self.selection_rect_start_y, final_y)
-            x1_canvas = max(self.selection_rect_start_x, final_x)
-            y1_canvas = max(self.selection_rect_start_y, final_y)
+            x0_canvas = min(self.selection_rect_start_x, final_x_canvas)
+            y0_canvas = min(self.selection_rect_start_y, final_y_canvas)
+            x1_canvas = max(self.selection_rect_start_x, final_x_canvas)
+            y1_canvas = max(self.selection_rect_start_y, final_y_canvas)
             canvas.delete(self.selection_rect_id)
             self.selection_rect_id = None
 
-            if abs(x1_canvas - x0_canvas) < 3 or abs(y1_canvas - y0_canvas) < 3: return
-            if not self.tk_image: return
+            if abs(x1_canvas - x0_canvas) < 5 or abs(y1_canvas - y0_canvas) < 5: return
 
             img_bbox_on_canvas = canvas.bbox(self.image_on_canvas)
             if not img_bbox_on_canvas: return
 
-            img_x_on_canvas, img_y_on_canvas = img_bbox_on_canvas[0], img_bbox_on_canvas[1]
-            sel_x0_img, sel_y0_img = x0_canvas - img_x_on_canvas, y0_canvas - img_y_on_canvas
-            sel_x1_img, sel_y1_img = x1_canvas - img_x_on_canvas, y1_canvas - img_y_on_canvas
+            img_offset_x_on_canvas, img_offset_y_on_canvas = img_bbox_on_canvas[0], img_bbox_on_canvas[1]
 
-            zoom_matrix = fitz.Matrix(self.current_zoom, self.current_zoom)
-            try:
-                inv_zoom_matrix = ~zoom_matrix
-            except ZeroDivisionError:
+            sel_x0_on_displayed_img = int(x0_canvas - img_offset_x_on_canvas)
+            sel_y0_on_displayed_img = int(y0_canvas - img_offset_y_on_canvas)
+            sel_x1_on_displayed_img = int(x1_canvas - img_offset_x_on_canvas)
+            sel_y1_on_displayed_img = int(y1_canvas - img_offset_y_on_canvas)
+
+            pil_w = self.current_pil_image_for_ocr_selection.width
+            pil_h = self.current_pil_image_for_ocr_selection.height
+
+            sel_x0_on_displayed_img = max(0, sel_x0_on_displayed_img)
+            sel_y0_on_displayed_img = max(0, sel_y0_on_displayed_img)
+            sel_x1_on_displayed_img = min(pil_w, sel_x1_on_displayed_img)
+            sel_y1_on_displayed_img = min(pil_h, sel_y1_on_displayed_img)
+
+            if sel_x1_on_displayed_img <= sel_x0_on_displayed_img or \
+                    sel_y1_on_displayed_img <= sel_y0_on_displayed_img:
                 return
 
-            pdf_p0 = fitz.Point(sel_x0_img, sel_y0_img) * inv_zoom_matrix
-            pdf_p1 = fitz.Point(sel_x1_img, sel_y1_img) * inv_zoom_matrix
-            selection_rect_pdf = fitz.Rect(pdf_p0, pdf_p1).normalize()
-
             try:
-                page = self.pdf_handler.get_page(self.current_page_num)
-                if not page: return
-                selected_text = page.get_text("text", clip=selection_rect_pdf, sort=True)
+                selected_pil_region = self.current_pil_image_for_ocr_selection.crop(
+                    (sel_x0_on_displayed_img, sel_y0_on_displayed_img,
+                     sel_x1_on_displayed_img, sel_y1_on_displayed_img)
+                )
+                ocr_text = pytesseract.image_to_string(selected_pil_region, lang='ukr+eng')
 
-                if selected_text.strip():
-                    pyperclip.copy(selected_text)
-                    messagebox.showinfo("Копіювання", f"Виділений текст скопійовано.", parent=self.master)
+                if ocr_text.strip():
+                    pyperclip.copy(ocr_text)
+                    messagebox.showinfo("OCR Копіювання",
+                                        f"Розпізнаний текст з виділеної області скопійовано.",
+                                        parent=self.master)
+                else:
+                    messagebox.showinfo("OCR Копіювання", "Не вдалося розпізнати текст у виділеній області.",
+                                        parent=self.master)
+            except pytesseract.TesseractNotFoundError:
+                messagebox.showerror("Помилка Tesseract", "Tesseract OCR не знайдено або шлях вказано невірно.",
+                                     parent=self.master)
             except pyperclip.PyperclipException as e_pyperclip:
                 messagebox.showerror("Помилка копіювання", f"pyperclip не налаштований: {e_pyperclip}",
                                      parent=self.master)
-            except Exception as e_text:
-                messagebox.showerror("Помилка", "Не вдалося отримати текст з виділеної області.", parent=self.master)
-
-    # --- Очищення та закриття ---
-    def clear_all_state_before_open(self):
-        """Скидає стан перед відкриттям нового PDF."""
-        self.pdf_handler.close_pdf()  # Закриває попередній документ
-        self.current_page_num = 0
-        self.current_zoom = 1.0  # Скидання масштабу до дефолтного
-        self.default_zoom_for_file = 1.0
-
-        self.bookmark_manager.clear_bookmarks()
-        self.search_manager.clear_search_results(update_ui=False)  # UI оновиться пізніше
-
-        # Очищення Canvas
-        canvas = self.ui_manager.canvas
-        if hasattr(self, 'tk_image') and self.tk_image:
-            canvas.itemconfig(self.image_on_canvas, image="")
-            self.tk_image = None
-        canvas.coords(self.image_on_canvas, 0, 0)
-        canvas.config(scrollregion=(0, 0, 0, 0))
-        # Початковий стан UI буде встановлено після відкриття або в open_pdf
-
-    def on_closing_command(self):
-        self.pdf_handler.close_pdf()
-        self.master.destroy()
+            except Exception as e_ocr:
+                messagebox.showerror("Помилка OCR", f"Помилка під час OCR виділеної області: {e_ocr}",
+                                     parent=self.master)
+                # import traceback # Розкоментуйте для детальної діагностики в консолі
+                # traceback.print_exc()

@@ -1,10 +1,10 @@
-import tkinter as tk  # Для simpledialog та messagebox
+import tkinter as tk
 from tkinter import simpledialog, messagebox
 
 
 class BookmarkManager:
     def __init__(self, app_ref):
-        self.app = app_ref  # Посилання на головний додаток для доступу до GUI та стану
+        self.app = app_ref
         self.bookmarks = {}
 
     def add_bookmark(self):
@@ -16,7 +16,7 @@ class BookmarkManager:
         )
         if bookmark_name and bookmark_name.strip():
             self.bookmarks[bookmark_name.strip()] = self.app.current_page_num
-            self.app.ui_manager.update_bookmark_combo_list(self.bookmarks)  # Оновлюємо UI через ui_manager
+            self.app.ui_manager.update_bookmark_combo_list(self.bookmarks)
             self.app.ui_manager.bookmark_combo.set(bookmark_name.strip())
             self.app.ui_manager.btn_remove_bookmark.config(state=tk.NORMAL)
         elif bookmark_name is not None:
@@ -53,8 +53,8 @@ class BookmarkManager:
             if self.app.pdf_handler.pdf_document and \
                     0 <= target_page < self.app.pdf_handler.total_pages:
                 self.app.current_page_num = target_page
-                self.app.display_page()  # Головний клас відповідає за відображення
-                self.app.ui_manager.update_navigation_buttons_state()  # Оновлення кнопок навігації
+                self.app.display_page()
+                self.app.ui_manager.update_navigation_buttons_state()
             else:
                 messagebox.showerror(
                     "Помилка",
@@ -70,5 +70,5 @@ class BookmarkManager:
 
     def clear_bookmarks(self):
         self.bookmarks.clear()
-        if hasattr(self.app, 'ui_manager') and self.app.ui_manager:  # Перевірка наявності ui_manager
+        if hasattr(self.app, 'ui_manager') and self.app.ui_manager:
             self.app.ui_manager.update_bookmark_combo_list(self.bookmarks)
