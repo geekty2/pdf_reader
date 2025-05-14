@@ -1,9 +1,9 @@
-import fitz  # PyMuPDF
+import fitz
 from PIL import Image
 import pytesseract
-import platform
 import io
-import os  # Для шляхів до Tesseract
+import os
+import platform  # Додано для шляхів Tesseract
 
 
 class PDFHandler:
@@ -13,26 +13,19 @@ class PDFHandler:
         self._configure_tesseract()
 
     def _configure_tesseract(self):
-        """Намагається налаштувати шлях до Tesseract OCR."""
         tesseract_path = ""
-        system = platform.system()
+        system_platform = platform.system()  # Змінено назву змінної, щоб уникнути конфлікту
         common_paths = []
 
-        if system == "Windows":
+        if system_platform == "Windows":
             common_paths = [
                 r'C:\Program Files\Tesseract-OCR\tesseract.exe',
                 r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe'
             ]
-        elif system == "Linux":
-            common_paths = [
-                '/usr/bin/tesseract',
-                '/usr/local/bin/tesseract'
-            ]
-        elif system == "Darwin":  # macOS
-            common_paths = [
-                '/opt/homebrew/bin/tesseract',  # Apple Silicon (Homebrew)
-                '/usr/local/bin/tesseract'  # Intel (Homebrew)
-            ]
+        elif system_platform == "Linux":
+            common_paths = ['/usr/bin/tesseract', '/usr/local/bin/tesseract']
+        elif system_platform == "Darwin":
+            common_paths = ['/opt/homebrew/bin/tesseract', '/usr/local/bin/tesseract']
 
         for path in common_paths:
             if os.path.exists(path):
@@ -45,11 +38,11 @@ class PDFHandler:
                 print(f"PDFHandler: Використовується Tesseract: {tesseract_path}")
             except Exception as e:
                 print(f"PDFHandler: Помилка при встановленні шляху Tesseract '{tesseract_path}': {e}")
-                tesseract_path = ""  # Скидаємо, якщо шлях недійсний для pytesseract
+                tesseract_path = ""
 
         if not tesseract_path:
             print("PDFHandler: ПОПЕРЕДЖЕННЯ - Tesseract OCR не знайдено автоматично або не вдалося налаштувати.")
-            print("           Функції OCR можуть не працювати. Будь ласка, переконайтеся, що Tesseract встановлено")
+            print("           Функції OCR можуть не працювати. Переконайтеся, що Tesseract встановлено")
             print("           і знаходиться в системному PATH, або вкажіть шлях у PDFHandler._configure_tesseract().")
 
     def open_pdf_file(self, filepath):
@@ -90,14 +83,13 @@ class PDFHandler:
         page = self.get_page(page_num)
         if not page: return ""
 
-        print(f"PDFHandler: Використання OCR для сторінки {page_num + 1} з мовою '{lang}'...")
+        # print(f"PDFHandler: Використання OCR для сторінки {page_num + 1} з мовою '{lang}'...")
         try:
             zoom_matrix = fitz.Matrix(300 / 72, 300 / 72)
             pix = page.get_pixmap(matrix=zoom_matrix, alpha=False)
+            if not pix: return "ПОМИЛКА_OCR_CANNOT_GET_PIXMAP"
             pil_img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
             text = pytesseract.image_to_string(pil_img, lang=lang)
-            # print(f"PDFHandler: OCR результат (стор. {page_num + 1}): '{text[:50].strip()}...'")
             return text
         except pytesseract.TesseractNotFoundError:
             print("PDFHandler: ПОМИЛКА OCR - Tesseract не знайдено.")
@@ -111,7 +103,6 @@ class PDFHandler:
         if not page: return ""
 
         text_normal = page.get_text("text")
-        # Поріг для визначення "мало тексту"
         if text_normal.strip() and len(text_normal.strip()) > 30:
             return text_normal
         elif use_ocr_if_needed:
@@ -136,7 +127,7 @@ class PDFHandler:
 
         if "ПОМИЛКА_OCR_TESSERACT_NOT_FOUND" in text:
             return False, "ПОМИЛКА: Tesseract не знайдено для OCR."
-        if "ПОМИЛКА_OCR_" in text:  # Будь-яка інша помилка OCR
+        if "ПОМИЛКА_OCR_" in text:
             return False, f"Сталася помилка під час OCR: {text.replace('ПОМИЛКА_OCR_', '')}"
         if not text.strip():
             return False, "Сторінка не містить тексту (навіть після можливої спроби OCR)."
@@ -147,17 +138,17 @@ class PDFHandler:
         page = self.get_page(page_num)
         if not page: return []
 
-        search_flags = 1  # Ігнорувати регістр
+        search_flags = 1
 
         if not use_ocr:
             quads = page.search_for(search_term, quads=True, flags=search_flags)
             return [q.rect for q in quads]
         else:
-            print(f"PDFHandler: Пошук з OCR на сторінці {page_num + 1} для '{search_term}'...")
+            # print(f"PDFHandler: Пошук з OCR на сторінці {page_num + 1} для '{search_term}'...")
             try:
                 ocr_zoom_matrix = fitz.Matrix(300 / 72, 300 / 72)
                 pix = page.get_pixmap(matrix=ocr_zoom_matrix, alpha=False)
-                if not pix: return []  # Не вдалося отримати pixmap
+                if not pix: return []
                 pil_img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
                 ocr_data = pytesseract.image_to_data(pil_img, lang=ocr_lang, output_type=pytesseract.Output.DICT)
 
@@ -172,7 +163,7 @@ class PDFHandler:
                     if conf > 40 and search_term_lower in word.lower():
                         x, y, w, h = ocr_data['left'][i], ocr_data['top'][i], \
                             ocr_data['width'][i], ocr_data['height'][i]
-                        if w <= 0 or h <= 0: continue  # Пропускаємо вироджені прямокутники
+                        if w <= 0 or h <= 0: continue
 
                         p1_pdf = fitz.Point(x, y) * inv_ocr_zoom_matrix
                         p2_pdf = fitz.Point(x + w, y + h) * inv_ocr_zoom_matrix
@@ -180,7 +171,7 @@ class PDFHandler:
                         if not rect_pdf.is_empty:
                             found_rects.append(rect_pdf)
 
-                print(f"PDFHandler: OCR Пошук на стор. {page_num + 1}: знайдено {len(found_rects)} збігів.")
+                # print(f"PDFHandler: OCR Пошук на стор. {page_num+1}: знайдено {len(found_rects)} збігів.")
                 return found_rects
             except pytesseract.TesseractNotFoundError:
                 print("PDFHandler: ПОМИЛКА OCR - Tesseract не знайдено під час пошуку.")

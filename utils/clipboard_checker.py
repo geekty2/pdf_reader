@@ -1,5 +1,5 @@
 import pyperclip
-import tkinter as tk # Тільки для messagebox, якщо потрібно
+import tkinter as tk
 from tkinter import messagebox
 
 def check_pyperclip_configured():
@@ -23,13 +23,4 @@ def check_pyperclip_configured():
             f"  macOS: зазвичай працює 'з коробки'"
         )
         print(warning_message)
-        # Якщо Tkinter вже ініціалізовано, можна показати messagebox
-        # try:
-        #     # Спроба створити тимчасове невидиме вікно для messagebox
-        #     root_check = tk.Tk()
-        #     root_check.withdraw()
-        #     messagebox.showwarning("Pyperclip Error", warning_message, parent=root_check)
-        #     root_check.destroy()
-        # except tk.TclError:
-        #     pass # Tkinter ще не готовий
         return False

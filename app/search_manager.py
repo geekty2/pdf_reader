@@ -29,7 +29,6 @@ class SearchManager:
         self.current_flat_match_idx = -1
         total_hits = 0
 
-        # Звичайний пошук
         for page_num in range(self.app.pdf_handler.total_pages):
             rects = self.app.pdf_handler.search_on_page(page_num, self.search_term, use_ocr=False)
             if rects:
@@ -51,11 +50,9 @@ class SearchManager:
                     self.search_results_map.clear()
                     self.flat_search_hits.clear()
 
-                    # Пошук з OCR
                     for page_num in range(self.app.pdf_handler.total_pages):
                         self.app.master.update_idletasks()
                         self.app.ui_manager.search_results_label.config(text=f"OCR стор. {page_num + 1}...")
-                        # Вказуємо мову 'ukr+eng' для кращого розпізнавання змішаного тексту
                         rects = self.app.pdf_handler.search_on_page(page_num, self.search_term, use_ocr=True,
                                                                     ocr_lang='ukr+eng')
                         if rects:
