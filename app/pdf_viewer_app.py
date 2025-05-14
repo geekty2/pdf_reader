@@ -10,6 +10,7 @@ import subprocess
 import threading
 import queue
 import shlex
+import sys
 
 from .pdf_handler import PDFHandler
 from .ui_manager import UIManager
@@ -19,6 +20,14 @@ from .search_manager import SearchManager
 
 class PDFViewerApp:
     def __init__(self, master):
+
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # Якщо програма "заморожена" PyInstaller
+            self.base_path = sys._MEIPASS
+        else:
+            self.base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Два os.path.dirname, щоб вийти з app/
+        self.lectures_dir = os.path.join(self.base_path, "lectures")  # Повний шлях до папки лекцій
+        self.lectures_files = []
         self.master = master
         master.title("Розширений PDF Рідер (Модульний + Термінал + Нові Закладки)")
 

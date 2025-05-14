@@ -3,6 +3,7 @@ from PIL import Image
 import pytesseract
 import io
 import os
+import sys # Для визначення, чи програма запущена як .exe
 import platform  # Додано для шляхів Tesseract
 
 
@@ -11,6 +12,70 @@ class PDFHandler:
         self.pdf_document = None
         self.total_pages = 0
         self._configure_tesseract()
+
+    def _get_bundle_dir(self):
+        """ Повертає шлях до папки, де знаходиться .exe або скрипт. """
+        if getattr(sys, 'frozen', False):
+            # Якщо програма "заморожена" (скомпільована в .exe PyInstaller)
+            return sys._MEIPASS
+        else:
+            # Якщо запускається як звичайний скрипт Python
+            return os.path.dirname(os.path.abspath(__file__))  # Шлях до поточної папки pdf_handler.py
+            # Можливо, краще os.path.dirname(os.path.dirname(os.path.abspath(__file__))) для кореня проекту
+
+    def _configure_tesseract(self):
+        tesseract_path_in_bundle = ""
+        tesseract_exe_name = "tesseract.exe" if platform.system() == "Windows" else "tesseract"
+
+        # Визначаємо, де шукати Tesseract
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            # Програма запущена як .exe, Tesseract має бути всередині _MEIPASS
+            # Якщо ви скопіювали tesseract_files в корінь збірки:
+            bundle_dir = sys._MEIPASS
+            # Припускаємо, що tesseract.exe лежить в bundle_dir (або в підпапці, якщо ви так налаштували .spec)
+            # Якщо ви в .spec вказали ('tesseract_files', 'ext_tools/tesseract')
+            # то шлях буде os.path.join(bundle_dir, 'ext_tools', 'tesseract', tesseract_exe_name)
+            # В нашому .spec ми копіювали вміст tesseract_files в корінь збірки ('.')
+            # та tessdata в 'tessdata'
+            tesseract_path_in_bundle = os.path.join(bundle_dir, tesseract_exe_name)
+
+            # Вказуємо TESSDATA_PREFIX, щоб Tesseract знав, де шукати мовні файли
+            # всередині спакованого додатка
+            tessdata_dir = os.path.join(bundle_dir, 'tessdata')
+            if os.path.isdir(tessdata_dir):
+                os.environ['TESSDATA_PREFIX'] = tessdata_dir
+                print(f"PDFHandler: TESSDATA_PREFIX встановлено на: {tessdata_dir}")
+            else:
+                print(f"PDFHandler: ПОПЕРЕДЖЕННЯ - папка tessdata не знайдена в: {tessdata_dir}")
+
+        else:
+            # Програма запускається як скрипт, використовуємо попередню логіку пошуку
+            # (або ви можете жорстко вказати шлях для розробки)
+            system_platform = platform.system()
+            common_paths = []
+            if system_platform == "Windows":
+                common_paths = [r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe']
+            elif system_platform == "Linux":
+                common_paths = ['/usr/bin/tesseract', '/usr/local/bin/tesseract']
+            elif system_platform == "Darwin":
+                common_paths = ['/opt/homebrew/bin/tesseract', '/usr/local/bin/tesseract']
+
+            for path_option in common_paths:
+                if os.path.exists(path_option):
+                    tesseract_path_in_bundle = path_option
+                    break
+
+        if tesseract_path_in_bundle and os.path.exists(tesseract_path_in_bundle):
+            try:
+                pytesseract.pytesseract.tesseract_cmd = tesseract_path_in_bundle
+                print(f"PDFHandler: Використовується Tesseract: {tesseract_path_in_bundle}")
+            except Exception as e:
+                print(f"PDFHandler: Помилка при встановленні шляху Tesseract '{tesseract_path_in_bundle}': {e}")
+        else:
+            print("PDFHandler: ПОПЕРЕДЖЕННЯ - Tesseract OCR не вдалося знайти.")
+            print("           Функції OCR можуть не працювати.")
+
 
     def _configure_tesseract(self):
         tesseract_path = ""

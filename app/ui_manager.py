@@ -196,53 +196,84 @@ class UIManager:
 
     def _create_bookmark_context_menu(self):
         self.bookmark_context_menu = Menu(self.master_tk_window, tearoff=0)
+        # Переконуємося, що команди викликають правильні методи з app.bookmark_manager
         self.bookmark_context_menu.add_command(label="Використати в терміналі",
-                                               command=self._use_selected_bookmark_from_context_menu)
+                                               command=self._use_selected_bookmark_from_context_menu)  # Це внутрішній метод UIManager
         self.bookmark_context_menu.add_command(label="Видалити закладку",
-                                               command=self._remove_selected_bookmark_from_context_menu)
+                                               command=self._remove_selected_bookmark_from_context_menu)  # Це внутрішній метод UIManager
         self.bookmark_context_menu.add_separator()
         self.bookmark_context_menu.add_command(label="Скасувати")
 
     def _show_bookmark_context_menu(self, event):
+        # print("UIManager: _show_bookmark_context_menu викликано") # ДІАГНОСТИКА
         item_id = self.bookmark_treeview.identify_row(event.y)
+        # print(f"UIManager: identify_row({event.y}) -> '{item_id}'") # ДІАГНОСТИКА
         if item_id:
+            # Якщо клікнули на елемент, який ще не вибраний, вибираємо його
             if not self.bookmark_treeview.selection() or item_id not in self.bookmark_treeview.selection():
                 self.bookmark_treeview.selection_set(item_id)
-            self.bookmark_treeview.focus(item_id)
+            self.bookmark_treeview.focus(item_id)  # Встановлюємо фокус на елемент під курсором
+            # print(f"UIManager: Встановлено фокус на '{item_id}'") # ДІАГНОСТИКА
             try:
                 self.bookmark_context_menu.tk_popup(event.x_root, event.y_root)
             finally:
                 self.bookmark_context_menu.grab_release()
+        # else:
+        # print("UIManager: Немає елемента під курсором для контекстного меню.") # ДІАГНОСТИКА
 
     def _use_selected_bookmark_from_context_menu(self):
         bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
+        print(f"UIManager (context menu): Спроба використати закладку: '{bookmark_name}'") # ДІАГНОСТИКА
         if bookmark_name:
             self.app.bookmark_manager.use_bookmark_text_in_terminal(bookmark_name)
 
     def _remove_selected_bookmark_from_context_menu(self):
         bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
+        print(f"UIManager (context menu): Спроба видалити закладку: '{bookmark_name}'") # ДІАГНОСТИКА
         if bookmark_name:
             self.app.bookmark_manager.remove_bookmark_by_name(bookmark_name)
 
-    def _use_selected_bookmark_from_event(self, event):
-        item_id = self.bookmark_treeview.identify_row(event.y)
-        if item_id:
-            # self.bookmark_treeview.selection_set(item_id) # Не обов'язково, focus() зробить це
-            self.bookmark_treeview.focus(item_id)
-            bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
-            if bookmark_name:
-                self.app.bookmark_manager.use_bookmark_text_in_terminal(bookmark_name)
+    def _use_selected_bookmark_from_event(self, event): # Для подвійного кліку
+        # item_id = self.bookmark_treeview.identify_row(event.y) # identify_row для подвійного кліку не завжди надійний
+        # Краще отримати виділений елемент, на якому стався подвійний клік
+        selected_items = self.bookmark_treeview.selection()
+        if not selected_items: return # Немає виділених елементів
+
+        item_id = selected_items[0] # Беремо перший (і єдиний, бо selectmode=BROWSE)
+        self.bookmark_treeview.focus(item_id) # Переконуємося, що фокус на ньому
+
+        bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
+        print(f"UIManager (double-click): Спроба використати закладку: '{bookmark_name}'") # ДІАГНОСТИКА
+        if bookmark_name:
+            self.app.bookmark_manager.use_bookmark_text_in_terminal(bookmark_name)
 
     def update_bookmark_treeview(self, bookmarks_text_content_dict):
-        if not self.bookmark_treeview: return  # Якщо віджет ще не створено
+        if not self.bookmark_treeview: return
+        # print(f"UIManager: Оновлення Treeview з {len(bookmarks_text_content_dict)} закладками.") # ДІАГНОСТИКА
+
+        # Зберігаємо виділення та прокрутку, якщо можливо
+        current_selection_iid = self.bookmark_treeview.focus()
+        # yview_pos = self.bookmark_treeview.yview() # Запам'ятовуємо позицію прокрутки
+
         for item in self.bookmark_treeview.get_children():
             self.bookmark_treeview.delete(item)
 
-        for name, content in bookmarks_text_content_dict.items():
+        sorted_bookmark_names = sorted(bookmarks_text_content_dict.keys())  # Сортуємо для консистентності
+        for name in sorted_bookmark_names:
+            content = bookmarks_text_content_dict[name]
             preview_content = (content[:35] + '...') if len(content) > 35 else content
+            # Використовуємо `iid=name`, щоб потім можна було відновити виділення
             self.bookmark_treeview.insert('', tk.END, iid=name, values=(name, preview_content.replace('\n', ' ')))
 
-        self.update_bookmark_related_ui_state()
+        # Відновлюємо виділення, якщо елемент ще існує
+        if current_selection_iid and self.bookmark_treeview.exists(current_selection_iid):
+            self.bookmark_treeview.focus(current_selection_iid)
+            self.bookmark_treeview.selection_set(current_selection_iid)
+            # self.bookmark_treeview.see(current_selection_iid) # Прокрутити до вибраного елемента
+        # Відновлення позиції прокрутки може бути складним, якщо кількість елементів сильно змінилася
+        # self.bookmark_treeview.yview_moveto(yview_pos[0])
+
+        self.update_bookmark_related_ui_state()  # Це оновлює кнопку "Додати"
 
     def update_status_bar(self, message):
         if self.status_bar_label:
