@@ -3,8 +3,8 @@ from PIL import Image
 import pytesseract
 import io
 import os
-import sys # Для визначення, чи програма запущена як .exe
-import platform  # Додано для шляхів Tesseract
+import sys
+import platform
 
 
 class PDFHandler:
@@ -16,31 +16,18 @@ class PDFHandler:
     def _get_bundle_dir(self):
         """ Повертає шлях до папки, де знаходиться .exe або скрипт. """
         if getattr(sys, 'frozen', False):
-            # Якщо програма "заморожена" (скомпільована в .exe PyInstaller)
             return sys._MEIPASS
         else:
-            # Якщо запускається як звичайний скрипт Python
-            return os.path.dirname(os.path.abspath(__file__))  # Шлях до поточної папки pdf_handler.py
-            # Можливо, краще os.path.dirname(os.path.dirname(os.path.abspath(__file__))) для кореня проекту
+            return os.path.dirname(os.path.abspath(__file__))
+
 
     def _configure_tesseract(self):
         tesseract_path_in_bundle = ""
         tesseract_exe_name = "tesseract.exe" if platform.system() == "Windows" else "tesseract"
 
-        # Визначаємо, де шукати Tesseract
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            # Програма запущена як .exe, Tesseract має бути всередині _MEIPASS
-            # Якщо ви скопіювали tesseract_files в корінь збірки:
             bundle_dir = sys._MEIPASS
-            # Припускаємо, що tesseract.exe лежить в bundle_dir (або в підпапці, якщо ви так налаштували .spec)
-            # Якщо ви в .spec вказали ('tesseract_files', 'ext_tools/tesseract')
-            # то шлях буде os.path.join(bundle_dir, 'ext_tools', 'tesseract', tesseract_exe_name)
-            # В нашому .spec ми копіювали вміст tesseract_files в корінь збірки ('.')
-            # та tessdata в 'tessdata'
             tesseract_path_in_bundle = os.path.join(bundle_dir, tesseract_exe_name)
-
-            # Вказуємо TESSDATA_PREFIX, щоб Tesseract знав, де шукати мовні файли
-            # всередині спакованого додатка
             tessdata_dir = os.path.join(bundle_dir, 'tessdata')
             if os.path.isdir(tessdata_dir):
                 os.environ['TESSDATA_PREFIX'] = tessdata_dir
@@ -49,8 +36,7 @@ class PDFHandler:
                 print(f"PDFHandler: ПОПЕРЕДЖЕННЯ - папка tessdata не знайдена в: {tessdata_dir}")
 
         else:
-            # Програма запускається як скрипт, використовуємо попередню логіку пошуку
-            # (або ви можете жорстко вказати шлях для розробки)
+
             system_platform = platform.system()
             common_paths = []
             if system_platform == "Windows":
@@ -79,8 +65,7 @@ class PDFHandler:
 
     def _configure_tesseract(self):
         tesseract_path = ""
-        system_platform = platform.system()  # Змінено назву змінної, щоб уникнути конфлікту
-        common_paths = []
+        system_platform = platform.system()
 
         if system_platform == "Windows":
             common_paths = [
@@ -148,7 +133,6 @@ class PDFHandler:
         page = self.get_page(page_num)
         if not page: return ""
 
-        # print(f"PDFHandler: Використання OCR для сторінки {page_num + 1} з мовою '{lang}'...")
         try:
             zoom_matrix = fitz.Matrix(300 / 72, 300 / 72)
             pix = page.get_pixmap(matrix=zoom_matrix, alpha=False)
@@ -209,7 +193,6 @@ class PDFHandler:
             quads = page.search_for(search_term, quads=True, flags=search_flags)
             return [q.rect for q in quads]
         else:
-            # print(f"PDFHandler: Пошук з OCR на сторінці {page_num + 1} для '{search_term}'...")
             try:
                 ocr_zoom_matrix = fitz.Matrix(300 / 72, 300 / 72)
                 pix = page.get_pixmap(matrix=ocr_zoom_matrix, alpha=False)
@@ -236,7 +219,6 @@ class PDFHandler:
                         if not rect_pdf.is_empty:
                             found_rects.append(rect_pdf)
 
-                # print(f"PDFHandler: OCR Пошук на стор. {page_num+1}: знайдено {len(found_rects)} збігів.")
                 return found_rects
             except pytesseract.TesseractNotFoundError:
                 print("PDFHandler: ПОМИЛКА OCR - Tesseract не знайдено під час пошуку.")

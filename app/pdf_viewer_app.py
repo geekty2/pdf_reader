@@ -22,18 +22,17 @@ class PDFViewerApp:
     def __init__(self, master):
 
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            # Якщо програма "заморожена" PyInstaller
             self.base_path = sys._MEIPASS
         else:
-            self.base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Два os.path.dirname, щоб вийти з app/
-        self.lectures_dir = os.path.join(self.base_path, "lectures")  # Повний шлях до папки лекцій
+            self.base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.lectures_dir = os.path.join(self.base_path, "lectures")
         self.lectures_files = []
         self.master = master
-        master.title("Розширений PDF Рідер (Модульний + Термінал + Нові Закладки)")
+        master.title("LECTUREVIEWER")
 
         self.window_width = 1100
-        self.base_ui_height = 580  # Висота для верхньої частини (PDF + ліва панель)
-        self.terminal_ui_height = 200  # Висота терміналу з UIManager
+        self.base_ui_height = 580
+        self.terminal_ui_height = 200
 
         self.tk_image = None
         self.current_pil_image_for_ocr_selection = None
@@ -67,7 +66,7 @@ class PDFViewerApp:
 
         total_window_height = self.base_ui_height + self.terminal_ui_height + 20
         master.geometry(f"{self.window_width}x{total_window_height}")
-        master.resizable(True, True)  # Дозволяємо змінювати розмір
+        master.resizable(True, True)
 
         self.image_on_canvas = self.ui_manager.canvas.create_image(0, 0, anchor=tk.NW)
 
@@ -76,7 +75,7 @@ class PDFViewerApp:
 
         self._update_terminal_cwd_ui()
         self._check_command_queue()
-        self.refresh_lectures_list_command()  # Завантажуємо список лекцій
+        self.refresh_lectures_list_command()
         self.ui_manager.update_all_button_states()
 
     def _setup_event_bindings(self):
@@ -107,10 +106,7 @@ class PDFViewerApp:
             command = command_to_execute
             self.ui_manager.terminal_input_entry.delete(0, tk.END)
             self.ui_manager.terminal_input_entry.insert(0, command)
-            # Ми не виконуємо команду автоматично, користувач натисне Enter
-            # Якщо потрібно автоматично, розкоментуйте наступне і приберіть 'return'
-            # self.ui_manager.append_to_terminal(f"{self.current_working_directory}> {command}\n", "command")
-            # # Далі логіка запуску... (повтор з нижньої гілки)
+
             return
 
         if not command.strip():
@@ -204,7 +200,7 @@ class PDFViewerApp:
         finally:
             self.master.after(100, self._check_command_queue)
 
-    def open_pdf_dialog_command(self):  # Перейменовано, щоб відрізняти від відкриття лекції
+    def open_pdf_dialog_command(self):
         filepath = filedialog.askopenfilename(
             title="Виберіть PDF файл", filetypes=(("PDF файли", "*.pdf"), ("Всі файли", "*.*"))
         )
@@ -438,7 +434,7 @@ class PDFViewerApp:
         except Exception as e:
             self.current_pil_image_for_ocr_selection = None
             messagebox.showerror("Помилка відображення", f"Не вдалося відобразити сторінку: {e}", parent=self.master)
-            # import traceback # Для детальної діагностики
+            # import traceback
             # traceback.print_exc()
             canvas.itemconfig(self.image_on_canvas, image="")
             self.tk_image = None
@@ -612,7 +608,7 @@ class PDFViewerApp:
                 except pyperclip.PyperclipException as e_pyperclip:
                     messagebox.showerror("Помилка копіювання", f"pyperclip не налаштований: {e_pyperclip}",
                                          parent=self.master)
-            elif self.pdf_handler.pdf_document:  # Тільки якщо документ завантажено, але OCR нічого не дав
+            elif self.pdf_handler.pdf_document:
                 messagebox.showinfo("OCR Копіювання", "Не вдалося розпізнати текст у виділеній області.",
                                     parent=self.master)
 

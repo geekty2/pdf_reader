@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import messagebox
 
 def check_pyperclip_configured():
-    """Перевіряє, чи pyperclip налаштований, і виводить попередження, якщо ні."""
     try:
         pyperclip.copy("test_clipboard_check_startup")
         if pyperclip.paste() != "test_clipboard_check_startup":

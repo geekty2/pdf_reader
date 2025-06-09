@@ -1,0 +1,18 @@
+pdf_reader_project/
+├─ .gitignore
+├─ README.md
+├─ PDFReaderApp.spec
+├─ requirements.txt
+├─ main.py
+├─ lectures/
+│   └─ (тут ваші PDF-файли лекцій)
+├─ app/
+│   ├─ __init__.py
+│   ├─ pdf_viewer_app.py
+│   ├─ ui_manager.py
+│   ├── pdf_handler.py
+│   ├─ bookmark_manager.py
+│   └─ search_manager.py
+└─ utils/
+    ├─ __init__.py
+    └─ clipboard_checker.py

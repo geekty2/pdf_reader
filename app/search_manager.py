@@ -1,9 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox
 
-
-# fitz тут більше не потрібен напряму, все через pdf_handler
-
 class SearchManager:
     def __init__(self, app_ref):
         self.app = app_ref

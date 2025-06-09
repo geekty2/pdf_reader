@@ -22,7 +22,7 @@ class UIManager:
         self.current_dir_label = None
 
         self.bookmark_treeview = None
-        self.lectures_treeview = None  # Для списку лекцій
+        self.lectures_treeview = None
         self.status_bar_label = None
 
         self._create_widgets()
@@ -36,27 +36,25 @@ class UIManager:
         self.left_controls_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
         self.left_controls_panel.pack_propagate(False)
 
-        # --- Секція Файл ---
         ttk.Label(self.left_controls_panel, text="Файл", font=("Arial", 10, "bold")).pack(pady=(5, 2), anchor=tk.W)
         self.btn_open = ttk.Button(self.left_controls_panel, text="Відкрити PDF (з файлу)",
-                                   command=self.app.open_pdf_dialog_command)  # Змінено команду
+                                   command=self.app.open_pdf_dialog_command)
         self.btn_open.pack(fill=tk.X, pady=2)
         self.btn_copy_page_text = ttk.Button(self.left_controls_panel, text="Копіювати текст сторінки",
                                              command=self.app.copy_current_page_text_command, state=tk.DISABLED)
         self.btn_copy_page_text.pack(fill=tk.X, pady=2)
         ttk.Separator(self.left_controls_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
 
-        # --- Секція Список Лекцій ---
         ttk.Label(self.left_controls_panel, text="Лекції", font=("Arial", 10, "bold")).pack(pady=(5, 2), anchor=tk.W)
         lectures_frame = ttk.Frame(self.left_controls_panel)
-        lectures_frame.pack(fill=tk.BOTH, expand=True, pady=2, ipady=5)  # ipady для внутрішнього відступу
+        lectures_frame.pack(fill=tk.BOTH, expand=True, pady=2, ipady=5)
 
         lectures_scrollbar_y = ttk.Scrollbar(lectures_frame, orient=tk.VERTICAL)
         self.lectures_treeview = ttk.Treeview(lectures_frame,
                                               columns=('filename',),
                                               show='headings',
                                               yscrollcommand=lectures_scrollbar_y.set,
-                                              selectmode=tk.BROWSE, height=5)  # Обмеження висоти
+                                              selectmode=tk.BROWSE, height=5)
         lectures_scrollbar_y.config(command=self.lectures_treeview.yview)
 
         self.lectures_treeview.heading('filename', text='Назва файлу')
@@ -84,7 +82,6 @@ class UIManager:
         self.btn_next.pack(fill=tk.X, pady=2)
         ttk.Separator(self.left_controls_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
 
-        # --- Секція Закладки (Текст) ---
         ttk.Label(self.left_controls_panel, text="Закладки (Текст)", font=("Arial", 10, "bold")).pack(pady=(5, 2),
                                                                                                       anchor=tk.W)
         self.btn_init_add_bookmark = ttk.Button(self.left_controls_panel, text="Додати закладку (виділити текст)",
@@ -92,7 +89,7 @@ class UIManager:
                                                 state=tk.DISABLED)
         self.btn_init_add_bookmark.pack(fill=tk.X, pady=2)
         bookmark_tree_frame = ttk.Frame(self.left_controls_panel)
-        bookmark_tree_frame.pack(fill=tk.BOTH, expand=True, pady=2, ipady=5)  # ipady
+        bookmark_tree_frame.pack(fill=tk.BOTH, expand=True, pady=2, ipady=5)
 
         self.bookmark_tree_scrollbar_y = ttk.Scrollbar(bookmark_tree_frame, orient=tk.VERTICAL)
         self.bookmark_tree_scrollbar_x = ttk.Scrollbar(bookmark_tree_frame, orient=tk.HORIZONTAL)
@@ -101,13 +98,13 @@ class UIManager:
                                               columns=columns, show='headings',
                                               yscrollcommand=self.bookmark_tree_scrollbar_y.set,
                                               xscrollcommand=self.bookmark_tree_scrollbar_x.set,
-                                              selectmode=tk.BROWSE, height=5)  # Обмеження висоти
+                                              selectmode=tk.BROWSE, height=5)
         self.bookmark_tree_scrollbar_y.config(command=self.bookmark_treeview.yview)
         self.bookmark_tree_scrollbar_x.config(command=self.bookmark_treeview.xview)
         self.bookmark_treeview.heading('name', text='Назва')
         self.bookmark_treeview.heading('content_preview', text='Вміст')
-        self.bookmark_treeview.column('name', width=80, minwidth=60, stretch=tk.NO, anchor=tk.W)  # Трохи менше
-        self.bookmark_treeview.column('content_preview', width=150, minwidth=100, anchor=tk.W)  # Трохи більше
+        self.bookmark_treeview.column('name', width=80, minwidth=60, stretch=tk.NO, anchor=tk.W)
+        self.bookmark_treeview.column('content_preview', width=150, minwidth=100, anchor=tk.W)
         self.bookmark_tree_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
         self.bookmark_tree_scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
         self.bookmark_treeview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -142,7 +139,6 @@ class UIManager:
         self.btn_next_match.pack(side=tk.LEFT, padx=(1, 0))
         ttk.Separator(self.left_controls_panel, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
 
-        # --- Секція Масштаб ---
         ttk.Label(self.left_controls_panel, text="Масштаб", font=("Arial", 10, "bold")).pack(pady=(5, 2), anchor=tk.W)
         zoom_buttons_frame = ttk.Frame(self.left_controls_panel)
         zoom_buttons_frame.pack(fill=tk.X)
@@ -158,7 +154,6 @@ class UIManager:
         self.zoom_label = ttk.Label(self.left_controls_panel, text=f"Масштаб: {int(self.app.current_zoom * 100)}%")
         self.zoom_label.pack(pady=2)
 
-        # --- Права панель і термінал ---
         self.right_panel = ttk.Frame(main_frame)
         self.right_panel.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         self.pdf_display_frame = ttk.Frame(self.right_panel)
@@ -196,84 +191,71 @@ class UIManager:
 
     def _create_bookmark_context_menu(self):
         self.bookmark_context_menu = Menu(self.master_tk_window, tearoff=0)
-        # Переконуємося, що команди викликають правильні методи з app.bookmark_manager
+
         self.bookmark_context_menu.add_command(label="Використати в терміналі",
-                                               command=self._use_selected_bookmark_from_context_menu)  # Це внутрішній метод UIManager
+                                               command=self._use_selected_bookmark_from_context_menu)
         self.bookmark_context_menu.add_command(label="Видалити закладку",
-                                               command=self._remove_selected_bookmark_from_context_menu)  # Це внутрішній метод UIManager
+                                               command=self._remove_selected_bookmark_from_context_menu)
         self.bookmark_context_menu.add_separator()
         self.bookmark_context_menu.add_command(label="Скасувати")
 
     def _show_bookmark_context_menu(self, event):
-        # print("UIManager: _show_bookmark_context_menu викликано") # ДІАГНОСТИКА
         item_id = self.bookmark_treeview.identify_row(event.y)
-        # print(f"UIManager: identify_row({event.y}) -> '{item_id}'") # ДІАГНОСТИКА
         if item_id:
-            # Якщо клікнули на елемент, який ще не вибраний, вибираємо його
             if not self.bookmark_treeview.selection() or item_id not in self.bookmark_treeview.selection():
                 self.bookmark_treeview.selection_set(item_id)
-            self.bookmark_treeview.focus(item_id)  # Встановлюємо фокус на елемент під курсором
-            # print(f"UIManager: Встановлено фокус на '{item_id}'") # ДІАГНОСТИКА
+            self.bookmark_treeview.focus(item_id)
             try:
                 self.bookmark_context_menu.tk_popup(event.x_root, event.y_root)
             finally:
                 self.bookmark_context_menu.grab_release()
-        # else:
-        # print("UIManager: Немає елемента під курсором для контекстного меню.") # ДІАГНОСТИКА
 
     def _use_selected_bookmark_from_context_menu(self):
         bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
-        print(f"UIManager (context menu): Спроба використати закладку: '{bookmark_name}'") # ДІАГНОСТИКА
+        print(f"UIManager (context menu): Спроба використати закладку: '{bookmark_name}'")
         if bookmark_name:
             self.app.bookmark_manager.use_bookmark_text_in_terminal(bookmark_name)
 
     def _remove_selected_bookmark_from_context_menu(self):
         bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
-        print(f"UIManager (context menu): Спроба видалити закладку: '{bookmark_name}'") # ДІАГНОСТИКА
+        print(f"UIManager (context menu): Спроба видалити закладку: '{bookmark_name}'")
         if bookmark_name:
             self.app.bookmark_manager.remove_bookmark_by_name(bookmark_name)
 
-    def _use_selected_bookmark_from_event(self, event): # Для подвійного кліку
-        # item_id = self.bookmark_treeview.identify_row(event.y) # identify_row для подвійного кліку не завжди надійний
-        # Краще отримати виділений елемент, на якому стався подвійний клік
-        selected_items = self.bookmark_treeview.selection()
-        if not selected_items: return # Немає виділених елементів
+    def _use_selected_bookmark_from_event(self, event):
 
-        item_id = selected_items[0] # Беремо перший (і єдиний, бо selectmode=BROWSE)
-        self.bookmark_treeview.focus(item_id) # Переконуємося, що фокус на ньому
+        selected_items = self.bookmark_treeview.selection()
+        if not selected_items: return
+
+        item_id = selected_items[0]
+        self.bookmark_treeview.focus(item_id)
 
         bookmark_name = self.app.bookmark_manager.get_selected_bookmark_name_from_treeview()
-        print(f"UIManager (double-click): Спроба використати закладку: '{bookmark_name}'") # ДІАГНОСТИКА
+        print(f"UIManager (double-click): Спроба використати закладку: '{bookmark_name}'")
         if bookmark_name:
             self.app.bookmark_manager.use_bookmark_text_in_terminal(bookmark_name)
 
     def update_bookmark_treeview(self, bookmarks_text_content_dict):
         if not self.bookmark_treeview: return
-        # print(f"UIManager: Оновлення Treeview з {len(bookmarks_text_content_dict)} закладками.") # ДІАГНОСТИКА
 
-        # Зберігаємо виділення та прокрутку, якщо можливо
         current_selection_iid = self.bookmark_treeview.focus()
-        # yview_pos = self.bookmark_treeview.yview() # Запам'ятовуємо позицію прокрутки
+
 
         for item in self.bookmark_treeview.get_children():
             self.bookmark_treeview.delete(item)
 
-        sorted_bookmark_names = sorted(bookmarks_text_content_dict.keys())  # Сортуємо для консистентності
+        sorted_bookmark_names = sorted(bookmarks_text_content_dict.keys())
         for name in sorted_bookmark_names:
             content = bookmarks_text_content_dict[name]
             preview_content = (content[:35] + '...') if len(content) > 35 else content
-            # Використовуємо `iid=name`, щоб потім можна було відновити виділення
             self.bookmark_treeview.insert('', tk.END, iid=name, values=(name, preview_content.replace('\n', ' ')))
 
-        # Відновлюємо виділення, якщо елемент ще існує
         if current_selection_iid and self.bookmark_treeview.exists(current_selection_iid):
             self.bookmark_treeview.focus(current_selection_iid)
             self.bookmark_treeview.selection_set(current_selection_iid)
-            # self.bookmark_treeview.see(current_selection_iid) # Прокрутити до вибраного елемента
-        # Відновлення позиції прокрутки може бути складним, якщо кількість елементів сильно змінилася
-        # self.bookmark_treeview.yview_moveto(yview_pos[0])
 
-        self.update_bookmark_related_ui_state()  # Це оновлює кнопку "Додати"
+
+        self.update_bookmark_related_ui_state()
 
     def update_status_bar(self, message):
         if self.status_bar_label:
@@ -355,16 +337,10 @@ class UIManager:
 
     def populate_lectures_treeview(self, lectures_files):
         """Заповнює Treeview списком файлів лекцій."""
-        if self.lectures_treeview:  # Переконуємося, що віджет створено
-            # Очищаємо попередні елементи
+        if self.lectures_treeview:
+
             for item in self.lectures_treeview.get_children():
                 self.lectures_treeview.delete(item)
 
-            # Додаємо нові, відсортовані для кращого вигляду
             for filename in sorted(lectures_files):
-                # Вставляємо, використовуючи ім'я файлу як iid (унікальний ідентифікатор рядка)
-                # та як значення для першої (і єдиної) видимої колонки 'filename'.
-                # 'text' тут не використовується, оскільки show='headings'.
                 self.lectures_treeview.insert('', tk.END, iid=filename, values=(filename,))
-        # else: # Можна додати логування, якщо віджет ще не створено
-        #     print("UIManager: lectures_treeview ще не ініціалізовано для заповнення.")
